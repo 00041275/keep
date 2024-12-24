@@ -259,6 +259,7 @@ def delete_incident(
     incident_bl.delete_incident(incident_id)
     return Response(status_code=202)
 
+
 @router.post(
     "/{incident_id}/split",
     description="Split incident by incident id",
@@ -284,7 +285,8 @@ async def split_incident(
     )
     incident_bl = IncidentBl(tenant_id, session, pusher_client)
     await incident_bl.add_alerts_to_incident(
-        incident_id=command.destination_incident_id, alert_fingerprints=command.alert_fingerprints
+        incident_id=command.destination_incident_id,
+        alert_fingerprints=command.alert_fingerprints,
     )
     incident_bl.delete_alerts_from_incident(
         incident_id=incident_id, alert_fingerprints=command.alert_fingerprints
@@ -293,7 +295,6 @@ async def split_incident(
         destination_incident_id=command.destination_incident_id,
         moved_alert_fingerprints=command.alert_fingerprints,
     )
-
 
 
 @router.post(
@@ -342,6 +343,7 @@ def merge_incidents(
         )
     except DestinationIncidentNotFound as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @router.get(
     "/{incident_id}/alerts",
@@ -504,7 +506,9 @@ async def add_alerts_to_incident(
 ):
     tenant_id = authenticated_entity.tenant_id
     incident_bl = IncidentBl(tenant_id, session, pusher_client)
-    await incident_bl.add_alerts_to_incident(incident_id, alert_fingerprints, is_created_by_ai)
+    await incident_bl.add_alerts_to_incident(
+        incident_id, alert_fingerprints, is_created_by_ai
+    )
     return Response(status_code=202)
 
 
@@ -546,7 +550,7 @@ async def receive_event(
         IdentityManagerFactory.get_auth_verifier(["write:incident"])
     ),
 ) -> dict[str, str]:
-    trace_id = request.state.trace_id
+    trace_id = "123"  # request.state.trace_id
     logger.info(
         "Received event",
         extra={

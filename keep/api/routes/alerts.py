@@ -5,13 +5,15 @@ import hmac
 import json
 import logging
 import os
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from typing import List, Optional
 
 import celpy
 from arq import ArqRedis
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, Request
-from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pusher import Pusher
 
@@ -52,6 +54,54 @@ router = APIRouter()
 logger = logging.getLogger(__name__)
 
 REDIS = os.environ.get("REDIS", "false") == "true"
+
+
+class TaskCountThreadPoolExecutor(ThreadPoolExecutor):
+    def __init__(
+        self, max_workers: Optional[int] = None, max_tasks_per_thread: int = 10
+    ):
+        super().__init__(max_workers)
+        self.max_tasks_per_thread = max_tasks_per_thread
+        self._task_counts = {}
+        self._lock = threading.Lock()
+
+    def submit(self, fn, *args, **kwargs):
+        def tracked_fn(*args, **kwargs):
+            current_thread = threading.current_thread()
+
+            with self._lock:
+                if current_thread not in self._task_counts:
+                    self._task_counts[current_thread] = 0
+                self._task_counts[current_thread] += 1
+
+                if self._task_counts[current_thread] >= self.max_tasks_per_thread:
+                    logger.info(
+                        "Thread %s reached %d tasks, triggering replacement",
+                        current_thread.name,
+                        self._task_counts[current_thread],
+                    )
+                    # Clean up task count
+                    del self._task_counts[current_thread]
+                    # Signal the thread to exit and be replaced
+                    current_thread._tstate_lock.release()
+                    # Release the idle semaphore to trigger thread replacement
+                    self._idle_semaphore.release()
+
+            return fn(*args, **kwargs)
+
+        return super().submit(tracked_fn, *args, **kwargs)
+
+
+# Modified run_in_threadpool function
+task_counted_executor = TaskCountThreadPoolExecutor(
+    max_workers=4, max_tasks_per_thread=10
+)
+
+
+async def counted_run_in_threadpool(func, *args, **kwargs):
+    loop = asyncio.get_event_loop()
+    pfunc = partial(func, *args, **kwargs)
+    return await loop.run_in_executor(task_counted_executor, pfunc)
 
 
 @router.get(
@@ -317,7 +367,7 @@ def create_process_event_task(
         pid=os.getpid()
     ).inc()  # Increase process counter
     task = asyncio.create_task(
-        run_in_threadpool(
+        counted_run_in_threadpool(
             process_event,
             {},
             tenant_id,
@@ -372,7 +422,7 @@ async def receive_generic_event(
             None,
             fingerprint,
             authenticated_entity.api_key_name,
-            request.state.trace_id,
+            "123",  # request.state.trace_id,
             event,
             _queue_name=KEEP_ARQ_QUEUE_BASIC,
         )
@@ -393,7 +443,7 @@ async def receive_generic_event(
             None,
             fingerprint,
             authenticated_entity.api_key_name,
-            request.state.trace_id,
+            "123",  # request.state.trace_id,
             event,
             running_tasks,
         )
@@ -444,7 +494,7 @@ async def receive_event(
     ),
     pusher_client: Pusher = Depends(get_pusher_client),
 ) -> dict[str, str]:
-    trace_id = request.state.trace_id
+    trace_id = "123"
     running_tasks: set = request.state.background_tasks
     provider_class = None
     try:

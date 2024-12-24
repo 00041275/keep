@@ -220,7 +220,7 @@ class DevTerminalFormatter(logging.Formatter):
                     extra_info = ""
                 break
             frame = frame.f_back
-
+        # 11156877312
         return f"{message} {extra_info}"
 
 
@@ -229,12 +229,12 @@ CONFIG = {
     "disable_existing_loggers": False,
     "formatters": {
         "json": {
-            "format": "%(asctime)s %(message)s %(levelname)s %(name)s %(filename)s %(otelTraceID)s %(otelSpanID)s %(otelServiceName)s %(threadName)s %(process)s %(module)s",
+            "format": "%(asctime)s %(message)s %(levelname)s %(name)s %(filename)s %(otelTraceID)s %(otelSpanID)s %(otelServiceName)s %(threadName)s %(thread)s %(process)s %(module)s",
             "class": "pythonjsonlogger.jsonlogger.JsonFormatter",
         },
         "dev_terminal": {
             "()": DevTerminalFormatter,
-            "format": "%(asctime)s - %(levelname)s - %(message)s",
+            "format": "%(asctime)s - %(threadName)s %(thread)s - %(levelname)s - %(message)s",
         },
     },
     "handlers": {

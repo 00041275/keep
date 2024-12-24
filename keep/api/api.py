@@ -299,6 +299,7 @@ def get_app(
 
     @app.exception_handler(Exception)
     async def catch_exception(request: Request, exc: Exception):
+        request.state.trace_id = "123"
         logging.error(
             f"An unhandled exception occurred: {exc}, Trace ID: {request.state.trace_id}. Tenant ID: {request.state.tenant_id}"
         )
