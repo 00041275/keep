@@ -52,7 +52,6 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         request.state.tenant_id = identity
         response = await call_next(request)
-        response.headers["X-Keep-Process-Id"] = str(os.getpid())
 
         end_time = time.time()
         logger.info(
