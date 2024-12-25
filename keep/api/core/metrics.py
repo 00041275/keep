@@ -1,4 +1,15 @@
-from prometheus_client import Counter, Gauge, Summary
+import os
+
+from prometheus_client import (  # noqa
+    CollectorRegistry,
+    Counter,
+    Gauge,
+    Summary,
+    multiprocess,
+)
+
+PROMETHEUS_MULTIPROC_DIR = os.environ.get("PROMETHEUS_MULTIPROC_DIR", "/tmp/prometheus")
+os.makedirs(PROMETHEUS_MULTIPROC_DIR, exist_ok=True)
 
 METRIC_PREFIX = "keep_"
 

@@ -47,7 +47,7 @@ def on_starting(server=None):
     migrate_db()
     provision_resources()
 
-    if not os.environ.get("PROMETHEUS_MULTIPROC_DIR", None):
+    if os.environ.get("PROMETHEUS_MULTIPROC_DIR", None) is None:
         # If the environment variable is not set, set it to a default value
         os.environ["PROMETHEUS_MULTIPROC_DIR"] = "/tmp/prometheus"
     os.makedirs(os.environ.get("PROMETHEUS_MULTIPROC_DIR"), exist_ok=True)
