@@ -60,6 +60,134 @@ class GithubProvider(BaseProvider):
             **self.config.authentication
         )
 
+    def _query(
+        self,
+        repository: str | None = None,
+        query: str = "",
+        raw: bool = False,
+        single_row: bool = False,
+        **kwargs: dict,
+    ) -> list[dict] | dict:
+        """
+        Search for GitHub issues using the GitHub search API.
+
+        Args:
+            repository (str, optional): The repository to search in (format: "owner/repo")
+            query (str): The search query using GitHub's search syntax
+            raw (bool, optional): If True, return raw GitHub Issue objects. If False, return formatted dict
+            single_row (bool, optional): If True, return only the first result
+            **kwargs: Additional search parameters to pass to the GitHub API
+
+        Returns:
+            list[dict] | dict: List of matching issues or single issue if single_row=True
+            Each issue contains:
+                - number: The issue number
+                - title: The issue title
+                - state: Issue state (open/closed)
+                - url: HTML URL of the issue
+                - labels: List of label names
+                - created_at: Creation timestamp
+                - updated_at: Last update timestamp
+                - body: Issue description
+                - assignees: List of assignee logins
+
+        Example queries:
+            - "is:issue is:open label:bug"
+            - "is:issue author:username created:>2024-01-01"
+            - "is:open type:issue project:owner/repo"
+        """
+        try:
+            # Add repository scope if specified
+            if repository:
+                query = f"repo:{repository} {query}"
+
+            # Execute the search
+            issues = self.client.search_issues(query, **kwargs)
+
+            if raw:
+                results = list(issues)
+            else:
+                results = []
+                for issue in issues:
+                    results.append(
+                        {
+                            "number": issue.number,
+                            "title": issue.title,
+                            "state": issue.state,
+                            "url": issue.html_url,
+                            "labels": [label.name for label in issue.labels],
+                            "created_at": str(issue.created_at),
+                            "updated_at": str(issue.updated_at),
+                            "body": issue.body,
+                            "assignees": [
+                                assignee.login for assignee in issue.assignees
+                            ],
+                        }
+                    )
+
+            if single_row:
+                if results:
+                    return results[0]
+                else:
+                    self.logger.warning("No results found for query: %s", query)
+                    raise ValueError(f"Query {query} returned no results")
+
+            return results
+
+        except Exception as e:
+            self.logger.error(f"Failed to search GitHub issues: {str(e)}")
+            raise
+
+    def _notify(
+        self,
+        repository: str,
+        title: str,
+        body: str,
+        labels: list[str] | None = None,
+        assignees: list[str] | None = None,
+        **kwargs: dict,
+    ) -> dict:
+        """
+        Create a new GitHub issue.
+
+        Args:
+            repository (str): The repository in format "owner/repo"
+            title (str): The title of the issue
+            body (str): The body/description of the issue
+            labels (list[str], optional): List of labels to apply to the issue
+            assignees (list[str], optional): List of GitHub usernames to assign the issue to
+            **kwargs: Additional arguments to pass to the GitHub API
+
+        Returns:
+            dict: Information about the created issue including:
+                - issue_number: The number of the created issue
+                - issue_url: The URL of the created issue
+                - title: The title of the created issue
+                - state: The state of the created issue (usually "open")
+        """
+        try:
+            repo = self.client.get_repo(repository)
+
+            # Create the issue
+            issue = repo.create_issue(
+                title=title,
+                body=body,
+                labels=labels if labels else [],
+                assignees=assignees if assignees else [],
+            )
+
+            self.logger.debug(f"Created issue #{issue.number} in {repository}")
+
+            return {
+                "issue_number": issue.number,
+                "issue_url": issue.html_url,
+                "title": issue.title,
+                "state": issue.state,
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to create issue in {repository}: {str(e)}")
+            raise
+
 
 class GithubStarsProvider(GithubProvider):
     """

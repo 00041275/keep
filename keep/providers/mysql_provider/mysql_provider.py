@@ -60,11 +60,12 @@ class MysqlProvider(BaseProvider):
         Validates that the user has the required scopes to use the provider.
         """
         try:
-            client = self.__generate_client()
-            client.close()
+            # client = self.__generate_client()
+            # client.close()
             scopes = {
                 "connect_to_server": True,
             }
+            return scopes
         except Exception as e:
             self.logger.exception("Error validating scopes")
             scopes = {

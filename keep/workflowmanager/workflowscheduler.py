@@ -306,6 +306,8 @@ class WorkflowScheduler:
         # take out all items from the workflows to run and run them, also, clean the self.workflows_to_run list
         with self.lock:
             workflows_to_run, self.workflows_to_run = self.workflows_to_run, []
+
+        self.logger.info("Running event workflows", extra={})
         for workflow_to_run in workflows_to_run:
             self.logger.info(
                 "Running event workflow on background",

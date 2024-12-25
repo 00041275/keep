@@ -178,6 +178,8 @@ class SlackProvider(BaseProvider):
                 raise ProviderException(
                     f"{self.__class__.__name__} failed to notify alert message to Slack: {response.text}"
                 )
+            # webhook url does not return a timestamp :(
+            notify_data = {}
         elif self.authentication_config.access_token:
             if not channel:
                 raise ProviderException("Channel is required (E.g. C12345)")

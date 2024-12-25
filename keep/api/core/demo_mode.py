@@ -615,24 +615,28 @@ async def simulate_alerts_worker(worker_id, keep_api_key, rps=1):
         while True:
             start = time.time()
             url, alert = await REQUESTS_QUEUE.get()
+            try:
+                async with session.post(url, json=alert, headers=headers) as response:
+                    total_requests += 1
+                    if not response.ok:
+                        logger.error("Failed to send alert: {}".format(response.text))
+                    else:
+                        logger.info("Alert sent successfully")
 
-            async with session.post(url, json=alert, headers=headers) as response:
-                total_requests += 1
-                if not response.ok:
-                    logger.error("Failed to send alert: {}".format(response.text))
-                else:
-                    logger.info("Alert sent successfully")
-
-            if rps:
-                delay = 1 / rps - (time.time() - start)
-                if delay > 0:
-                    logger.debug("worker %d sleeps, %f", worker_id, delay)
-                    await asyncio.sleep(delay)
-            logger.info(
-                "Worker %d RPS: %.2f",
-                worker_id,
-                total_requests / (time.time() - total_start),
-            )
+                if rps:
+                    delay = 1 / rps - (time.time() - start)
+                    if delay > 0:
+                        logger.debug("worker %d sleeps, %f", worker_id, delay)
+                        await asyncio.sleep(delay)
+                logger.info(
+                    "Worker %d RPS: %.2f",
+                    worker_id,
+                    total_requests / (time.time() - total_start),
+                )
+            except Exception as e:
+                logger.exception(
+                    "Error in simulate_alerts_worker", extra={"exception_str": str(e)}
+                )
 
 
 if __name__ == "__main__":

@@ -246,7 +246,12 @@ class ContextManager:
             self.steps_context[step_id]["results"] = results
         # this is an alias to the current step output
         self.steps_context["this"] = self.steps_context[step_id]
-        self.steps_context_size = asizeof(self.steps_context)
+        try:
+            self.steps_context_size = asizeof(self.steps_context)
+        except TypeError:
+            # Handle case where asizeof fails due to weak reference issues
+            # Set a reasonable default size estimate
+            self.steps_context_size = 1024 * 64  # 64KB default
 
     def set_step_vars(self, step_id, _vars):
         if step_id not in self.steps_context:

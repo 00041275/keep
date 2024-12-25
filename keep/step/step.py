@@ -43,6 +43,7 @@ class Step:
         self.__retry_count = self.__retry.get("count", 0)
         self.__retry_interval = self.__retry.get("interval", 0)
         self.__continue_to_next_step = self.config.get("continue", True)
+        self.__continue_on_error = self.config.get("continue_on_error", False)
 
     @property
     def foreach(self):
@@ -67,6 +68,9 @@ class Step:
             self.logger.error(
                 "Failed to run step %s with error %s", self.step_id, e, exc_info=True
             )
+            # if its ok to continue on error, return False
+            if self.__continue_on_error:
+                return False
             raise ActionError(e)
 
     def _check_throttling(self, action_name):
@@ -177,15 +181,18 @@ class Step:
         # 2. no "if" block is supplied, then use the AND between all conditions
         if self.config.get("if"):
             if_conf = self.config.get("if")
+            quote = self.config.get("quote_if", True)
         else:
             # create a string of all conditions, separated by "and"
             if_conf = " and ".join(
                 [f"{{{{ {condition.condition_alias} }}}} " for condition in conditions]
             )
+            quote = True
 
         # Now check it
         if if_conf:
-            if_conf = self.io_handler.quote(if_conf)
+            if quote:
+                if_conf = self.io_handler.quote(if_conf)
             if_met = self.io_handler.render(if_conf, safe=False)
             # Evaluate the condition string
             from asteval import Interpreter

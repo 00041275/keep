@@ -48,9 +48,10 @@ class OpenaiProvider(BaseProvider):
         scopes = {}
         return scopes
 
-    def _query(self, prompt, model="gpt-3.5-turbo"):
+    def _query(self, prompt, model="gpt-3.5-turbo", json=False, **kwargs):
         # gpt3.5 turbo has a limit of 16k characters
-        if len(prompt) > 16000:
+        # only "gpt-4o-2024-08-06" supports JSON
+        if len(prompt) > 16000 or json:
             # let's try another model
             self.logger.info(
                 "Prompt is too long for gpt-3.5-turbo, trying gpt-4o-2024-08-06"
@@ -61,7 +62,18 @@ class OpenaiProvider(BaseProvider):
             api_key=self.authentication_config.api_key,
             organization=self.authentication_config.organization_id,
         )
-        response = client.chat.completions.create(
-            model=model, messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content
+        if json:
+            import json
+
+            response = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "user", "content": prompt}],
+                response_format={"type": "json_object"},
+            )
+            response = json.loads(response.choices[0].message.content)
+            return response
+        else:
+            response = client.chat.completions.create(
+                model=model, messages=[{"role": "user", "content": prompt}]
+            )
+            return response.choices[0].message.content

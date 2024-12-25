@@ -61,10 +61,14 @@ class Workflow:
                 step_ran = step.run()
                 if step_ran:
                     self.logger.info("Step %s ran successfully", step.step_id)
+                else:
+                    self.logger.error(
+                        f"Step {step.step_id} failed but continuing to next step"
+                    )
                 # if the step ran + the step configured to stop the workflow:
                 if step_ran and not step.continue_to_next_step:
                     self.logger.info(
-                        "Step %s ran successfully, stopping because continue_to_next is False",
+                        "Step %s ran successfully, stopping because continue_on_error is False",
                         step.step_id,
                     )
                     break

@@ -1,0 +1,289 @@
+id: enrich-gcp-alert-2-0
+name: Enriching GCP Alerts with logs and create GitHub ticket
+description: Create a GitHub ticket for 500 status code detected in GCP logs
+triggers:
+  - type: manual
+  - filters:
+      - key: source
+        value: gcpmonitoring
+    type: alert
+steps:
+  - name: gcpmonitoring-step
+    provider:
+      config: "{{ providers.gcpmonitoring }}"
+      type: gcpmonitoring
+      with:
+        as_json: false
+        filter: "resource.type = \"cloud_run_revision\" \n{{alert.traceId}}\n-logName=\"projects/keephq-sandbox/logs/monitoring.googleapis.com%2FViolationOpenEventv1\"\n-jsonPayload.module=\"step\"\n-jsonPayload.module=\"workflow\"\n-jsonPayload.module=\"gcpmonitoring_provider\"\n"
+        page_size: 1000
+        project: "{{ alert.projectId }}"
+        raw: false
+        timedelta_in_days: 1
+  - name: tenant-id-step
+    provider:
+      config: "{{ providers.gcpmonitoring }}"
+      type: gcpmonitoring
+
+      with:
+        as_json: false
+        filter: "resource.type = \"cloud_run_revision\" \n{{alert.traceId}}\n-logName=\"projects/keephq-sandbox/logs/monitoring.googleapis.com%2FViolationOpenEventv1\"\n-jsonPayload.module=\"step\"\n-jsonPayload.module=\"workflow\"\n-jsonPayload.module=\"gcpmonitoring_provider\"\njsonPayload.tenant_id!=\"\"\n"
+        page_size: 1000
+        project: "{{ alert.projectId }}"
+        raw: true
+        timedelta_in_days: 1
+  - name: get-more-details
+    continue_on_error: true
+    provider:
+      config: " {{ providers.readonly }} "
+      type: mysql
+      # its not mandatory to have customer_name
+      with:
+        as_dict: true
+        enrich_alert:
+          - key: customer_name
+            value: results.name
+        query: select * from tenant where id = '{{ steps.tenant-id-step.results.0.payload.tenant_id }}'
+        single_row: true
+  # need to check if a bug is already open for this issue
+  - name: get-open-bugs
+    provider:
+      config: "{{ providers.github }}"
+      type: github
+      with:
+        repository: "keephq/keep"
+        query: "is:issue is:open bug"
+        raw: true
+  - name: openai-step
+    provider:
+      config: "{{ providers.openai }}"
+      type: openai
+      with:
+        prompt: 'Be conscience in your answer, do not make up things and do not answer questions that are not asked. You are a very talented engineer that receives context from GCP logs about an endpoint that returned 500 status code and reports back the root cause analysis. Here is the context: keep.json_dumps({{steps.gcpmonitoring-step.results}}) (it is a JSON list of log entries from GCP Logging). In your answer, also provide the message from the log entry that made you conclude the root cause and specify what your certainty level is that it is the root cause. (between 1-10, where 1 is low and 10 is high) Strip any special characters from the log entry and in general from your answer, no '' or " allowed.'
+  - name: check-similar-issues
+    provider:
+      config: "{{ providers.openai }}"
+      type: openai
+      with:
+        # check if the root cause is similar to any existing open bugs
+        enrich_alert:
+          - key: found_match
+            value: results.found_match
+        json: true
+        prompt: |
+          You are a similarity analyzer. You will be given a current issue and a list of existing issues.
+          Your task is to determine if any of the existing issues are describing the same root cause with high confidence (>0.9).
+
+          Current issue root cause:
+          {{steps.openai-step.results}}
+
+          Existing open issues:
+          {{steps.get-open-bugs.results}}
+
+          Instructions:
+          1. Analyze the technical details and root cause of both the current and existing issues
+          2. Look for matches in:
+             - Error patterns
+             - Affected components
+             - Stack traces
+             - Technical behaviors
+          3. If you find a match with confidence >0.9, return a JSON object in this format:
+             {
+               "found_match": true,
+               "matching_issue": {
+                 "number": "issue_number",
+                 "url": "issue_url",
+                 "confidence": 0.95,
+                 "reason": "Detailed technical reason for the match"
+               }
+             }
+          4. If no match is found with >0.9 confidence, return:
+             {
+               "found_match": false
+             }
+
+          Return ONLY the JSON object, nothing else.
+  - name: generate-issue-title
+    provider:
+      config: "{{ providers.openai }}"
+      type: openai
+      with:
+        prompt: |
+          Based on this root cause analysis: {{steps.openai-step.results}}
+          Generate a concise GitHub issue title that follows this exact format: [🐛 Bug 🤖]: {descriptive title}
+
+          Requirements:
+          - Must start with [🐛 Bug 🤖]:
+          - Title should be clear and concise (3-10 words)
+          - Focus on the actual bug/issue, not the customer
+          - Use technical but clear language
+          - End with appropriate label like Bug, UI, etc. if relevant
+
+          Example good titles:
+          [🐛 Bug 🤖]: OpsGenie scope validation review Bug
+          [🐛 Bug 🤖]: IncidentBl.update_incident does not push event to WebSocket Bug
+          [🐛 Bug 🤖]: Mock alerts should not show Linked Providers Bug UI
+
+          Return ONLY the title, nothing else.'
+  - name: openai-step-building-blocks
+    provider:
+      config: "{{ providers.openai }}"
+      type: openai
+      with:
+        prompt: 'Based on this output you created: {{steps.openai-step.results}} Create blocks of text that will be used in a Slack message You can read more about it here: https://api.slack.com/block-kit You should output a structured message in the format of a Slack block kit and nothing else. An example to your response should be this: ```- text: emoji: true text: New GCP Alert type: plain_text type: header - elements: - elements: - text: "Name: " type: text - style: bold: true text: "{{alert.name}}" type: text type: rich_text_section type: rich_text```'
+actions:
+  # create a GitHub issue
+  - name: github-issue-action
+    # only create a GitHub issue if no similar issues are found
+    if: "not {{steps.check-similar-issues.results.found_match}}"
+    quote_if: false
+    provider:
+      config: "{{ providers.github }}"
+      type: github
+      with:
+        repository: "keephq/keep"
+        title: "{{steps.generate-issue-title.results}}"
+        body: |
+          ## Customer Details
+          - Customer: {{alert.customer_name}}
+          - Severity: {{alert.severity}}
+          - Alert Name: {{alert.name}}
+
+          ## Root Cause Analysis
+          {{steps.openai-step.results}}
+
+          ## Alert Context
+          - Project ID: {{alert.projectId}}
+          - Trace ID: {{alert.traceId}}
+          - Detection Time: {{alert.detection_time}}
+
+          ## Links
+          - [Original Alert]({{alert.url}})
+          - [GCP Logs](https://console.cloud.google.com/logs/query;query=resource.type%20%3D%20%22cloud_run_revision%22%0A{{alert.traceId}};duration=P1D?project=keephq-sandbox)
+        labels:
+          - bug
+          - production
+          - customer-reported
+  - name: slack-action
+    provider:
+      config: "{{ providers.keephq }}"
+      type: slack
+      with:
+        blocks:
+          - text:
+              emoji: true
+              text: New GCP Alert
+              type: plain_text
+            type: header
+          - elements:
+              - elements:
+                  - text: "Name: "
+                    type: text
+                  - style:
+                      bold: true
+                    text: "{{alert.name}}"
+                    type: text
+                type: rich_text_section
+            type: rich_text
+          - text:
+              emoji: true
+              text: " "
+              type: plain_text
+            type: section
+          - elements:
+              - elements:
+                  - text: "Customer: "
+                    type: text
+                  - style:
+                      bold: true
+                    text: "{{alert.customer_name}}"
+                    type: text
+                type: rich_text_section
+            type: rich_text
+          - text:
+              emoji: true
+              text: " "
+              type: plain_text
+            type: section
+          - elements:
+              - elements:
+                  - text: "Severity: "
+                    type: text
+                  - style:
+                      bold: true
+                    text: "{{alert.severity}} \U0001F6A8"
+                    type: text
+                type: rich_text_section
+            type: rich_text
+          - text:
+              emoji: true
+              text: " "
+              type: plain_text
+            type: section
+          - elements:
+              - elements:
+                  - text: "Description: "
+                    type: text
+                  - style:
+                      bold: true
+                    text: "{{alert.description}}"
+                    type: text
+                type: rich_text_section
+            type: rich_text
+          - type: divider
+          - text:
+              emoji: true
+              text: Root cause analysis
+              type: plain_text
+            type: header
+          - text:
+              emoji: true
+              text: "{{steps.openai-step.results}}"
+              type: plain_text
+            type: section
+          - type: divider
+          - elements:
+              - action_id: actionId-0
+                text:
+                  emoji: true
+                  text: Original Alert
+                  type: plain_text
+                type: button
+                url: "{{alert.url}}"
+              - action_id: actionId-1
+                text:
+                  emoji: true
+                  text: Logs
+                  type: plain_text
+                type: button
+                url: https://console.cloud.google.com/logs/query;query=resource.type%20%3D%20%22cloud_run_revision%22%0A{{alert.traceId}};duration=P1D?project=keephq-sandbox
+            type: actions
+        channel: C07UB0LNS3D
+        enrich_alert:
+          - key: slack_timestamp
+            value: results.slack_timestamp
+        message: "{{steps.openai-step.results}}"
+  - name: slack-github-notification-if-created
+    if: '"{{steps.github-issue-action.results.issue_url}}"'
+    provider:
+      config: "{{ providers.keephq }}"
+      type: slack
+      with:
+        message: ":github: Issue created: {{steps.github-issue-action.results.issue_url}}"
+        thread_timestamp: "{{alert.slack_timestamp}}"
+  - name: slack-github-notification-if-exists
+    if: '"{{ steps.check-similar-issues.results.url }}"'
+    provider:
+      config: "{{ providers.keephq }}"
+      type: slack
+      with:
+        message: keep.json_dumps({{ foreach.value.payload }})
+        thread_timestamp: "{{alert.slack_timestamp}}"
+  - foreach: "{{steps.gcpmonitoring-step.results}}"
+    if: '"{{ foreach.value.payload_exists }}" and "{{alert.slack_timestamp}}"'
+    name: slack-action
+    provider:
+      config: "{{ providers.keephq }}"
+      type: slack
+      with:
+        message: keep.json_dumps({{ foreach.value.payload }})
+        thread_timestamp: "{{alert.slack_timestamp}}"
