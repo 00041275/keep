@@ -2,7 +2,6 @@ import copy
 import json
 import logging
 import os
-import re
 import typing
 
 import yaml
@@ -254,14 +253,14 @@ class Parser:
         """
         providers_json = os.environ.get("KEEP_PROVIDERS")
 
-        # check if env var is absolute or relative path to a providers json file
-        if providers_json and re.compile(r"^(\/|\.\/|\.\.\/).*\.json$").match(
-            providers_json
-        ):
-            with open(
-                file=providers_json, mode="r", encoding="utf8"
-            ) as file:
-                providers_json = file.read()
+        # # check if env var is absolute or relative path to a providers json file
+        # if re.compile(r"^(\/|\.\/|\.\.\/).*\.json$").match(
+        #     providers_json
+        # ):
+        #     with open(
+        #         file=providers_json, mode="r", encoding="utf8"
+        #     ) as file:
+        #         providers_json = file.read()
 
         if providers_json:
             try:

@@ -1,9 +1,9 @@
-import os
-import jwt
-import time
 import logging
+import os
+import time
 from importlib import metadata
 
+import jwt
 from fastapi import Request
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -52,6 +52,7 @@ class LoggingMiddleware(BaseHTTPMiddleware):
         start_time = time.time()
         request.state.tenant_id = identity
         response = await call_next(request)
+        response.headers["X-Keep-Process-Id"] = str(os.getpid())
 
         end_time = time.time()
         logger.info(
