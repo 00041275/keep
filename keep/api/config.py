@@ -1,8 +1,10 @@
 import logging
 import os
 
-from keep.api.alert_deduplicator.deduplication_rules_provisioning import provision_deduplication_rules_from_env
 import keep.api.logging
+from keep.api.alert_deduplicator.deduplication_rules_provisioning import (
+    provision_deduplication_rules_from_env,
+)
 from keep.api.api import AUTH_TYPE
 from keep.api.core.db_on_start import migrate_db, try_create_single_tenant
 from keep.api.core.dependencies import SINGLE_TENANT_UUID
@@ -44,6 +46,11 @@ def on_starting(server=None):
 
     migrate_db()
     provision_resources()
+
+    if not os.environ.get("PROMETHEUS_MULTIPROC_DIR", None):
+        # If the environment variable is not set, set it to a default value
+        os.environ["PROMETHEUS_MULTIPROC_DIR"] = "/tmp/prometheus"
+    os.makedirs(os.environ.get("PROMETHEUS_MULTIPROC_DIR"), exist_ok=True)
 
     # Load this early and use preloading
     # https://www.joelsleppy.com/blog/gunicorn-application-preloading/

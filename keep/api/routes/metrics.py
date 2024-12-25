@@ -1,15 +1,20 @@
+import os
 from typing import List
 
 import chevron
 from fastapi import APIRouter, Depends, Query, Request, Response
-from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from prometheus_client import (
+    CONTENT_TYPE_LATEST,
+    CollectorRegistry,
+    generate_latest,
+    multiprocess,
+)
 
 from keep.api.core.db import (
     get_last_alerts_for_incidents,
     get_last_incidents,
     get_workflow_executions_count,
 )
-from keep.api.core.metrics import registry
 from keep.api.models.alert import AlertDto
 from keep.identitymanager.authenticatedentity import AuthenticatedEntity
 from keep.identitymanager.identitymanagerfactory import IdentityManagerFactory
@@ -17,11 +22,13 @@ from keep.identitymanager.identitymanagerfactory import IdentityManagerFactory
 router = APIRouter()
 
 CONTENT_TYPE_LATEST = "text/plain; version=0.0.4; charset=utf-8"
+PROMETHEUS_MULTIPROC_DIR = os.environ.get("PROMETHEUS_MULTIPROC_DIR", "/tmp/prometheus")
 
 
 @router.get("/processing", include_in_schema=False)
 async def get_processing_metrics(request: Request):
-    # Generate all metrics from the single registry
+    registry = CollectorRegistry()
+    multiprocess.MultiProcessCollector(registry)
     metrics = generate_latest(registry)
     return Response(content=metrics, media_type=CONTENT_TYPE_LATEST)
 
