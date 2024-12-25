@@ -47,11 +47,6 @@ def on_starting(server=None):
     migrate_db()
     provision_resources()
 
-    if os.environ.get("PROMETHEUS_MULTIPROC_DIR", None) is None:
-        # If the environment variable is not set, set it to a default value
-        os.environ["PROMETHEUS_MULTIPROC_DIR"] = "/tmp/prometheus"
-    os.makedirs(os.environ.get("PROMETHEUS_MULTIPROC_DIR"), exist_ok=True)
-
     # Load this early and use preloading
     # https://www.joelsleppy.com/blog/gunicorn-application-preloading/
     # @tb: 👏 @Matvey-Kuk
@@ -94,3 +89,9 @@ def on_starting(server=None):
         os.environ["KEEP_API_URL"] = public_url
 
     logger.info("Keep server started")
+
+
+def worker_exit(server=None, worker=None):
+    from prometheus_client import multiprocess
+
+    multiprocess.mark_process_dead(worker.pid)

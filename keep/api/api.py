@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from importlib import metadata
 
@@ -109,6 +110,14 @@ async def startup():
     This runs for every worker on startup.
     Read more about lifespan here: https://fastapi.tiangolo.com/advanced/events/#lifespan
     """
+    logger.info("Setting up and clearing metrics")
+    coordination_dir = os.environ.get(
+        "prometheus_multiproc_dir", tempfile.gettempdir() + "/prometheus-multiproc-dir/"
+    )
+    os.environ["prometheus_multiproc_dir"] = coordination_dir
+    os.makedirs(coordination_dir, exist_ok=True)
+    logger.info("Metrics setup and cleared")
+
     logger.info("Disope existing DB connections")
     # psycopg2.DatabaseError: error with status PGRES_TUPLES_OK and no message from the libpq
     # https://stackoverflow.com/questions/43944787/sqlalchemy-celery-with-scoped-session-error/54751019#54751019
